@@ -177,13 +177,14 @@ ro.config.dha_th_rate=2.3 \
 ro.config.sdha_apps_bg_max=64 \
 ro.config.sdha_apps_bg_min=8
 
-# Perf Ux IOPrefetcher
+# IOP and Workload Classifier props
 PRODUCT_PROPERTY_OVERRIDES += \
 vendor.enable_prefetch=1 \
 vendor.iop.enable_uxe=1 \
-vendor.iop.enable_prefetch_ofr=1 \
-vendor.perf.iop_v3.enable=1 \
+vendor.perf.iop_v3.enable=true \
 persist.vendor.qti.games.gt.prof=1 \
+vendor.perf.workloadclassifier.enable=true \
+vendor.perf.gestureflingboost.enable=true \
 
 # Perf
 PRODUCT_PROPERTY_OVERRIDES += \
