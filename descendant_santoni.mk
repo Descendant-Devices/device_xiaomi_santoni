@@ -24,6 +24,10 @@ PRODUCT_NAME := descendant_santoni
 BOARD_VENDOR := Xiaomi
 PRODUCT_MANUFACTURER := Xiaomi
 
+# QCom Proprietary
+include vendor/qcom/common/perf/qti-perf.mk
+include vendor/qcom/common/av/qti-av.mk
+
 # GApps
 SUPPORTS_NATIVE_GOOGLE_CAMERA := NO
 SUPPORTS_GOOGLE_WALLS := NO
