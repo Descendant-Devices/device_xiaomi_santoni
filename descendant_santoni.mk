@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2019 The Havoc-OS Project
+# Copyright (C) 2020 Descendant
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,23 +15,24 @@
 #
 
 $(call inherit-product, device/xiaomi/santoni/full_santoni.mk)
-
-# Inherit some common Havoc-OS stuff.
-$(call inherit-product, vendor/havoc/config/common_full_phone.mk)
+$(call inherit-product, vendor/descendant/config/common_full_phone.mk)
 
 PRODUCT_DEVICE := santoni
 PRODUCT_BRAND := Xiaomi
 PRODUCT_MODEL := Redmi 4
-PRODUCT_NAME := havoc_santoni
+PRODUCT_NAME := descendant_santoni
 BOARD_VENDOR := Xiaomi
 PRODUCT_MANUFACTURER := Xiaomi
 
-# Official
-export export HAVOC_BUILD_TYPE=Official
-
-# Maintainer
-PRODUCT_PROPERTY_OVERRIDES += \
-    ro.havoc.maintainer=STARGAZER
+# GApps
+SUPPORTS_NATIVE_GOOGLE_CAMERA := NO
+SUPPORTS_GOOGLE_WALLS := NO
+SUPPORTS_GOOGLE_NEW_ASSISTANT := YES
+SUPPORTS_GOOGLE_ASSISTANT_EXTRA_RESOURCES := YES
+SUPPORTS_PIXEL_SETUP_OVERLAYS := YES
+PIXEL_SETUP_OVERLAY_TYPE := PIXELONE
+TARGET_INCLUDE_OWN_CAMERA := NO
+TARGET_FACE_UNLOCK_SUPPORTED := true
 
 # Boot animation
 TARGET_SCREEN_HEIGHT := 1280
