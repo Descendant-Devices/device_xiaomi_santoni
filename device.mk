@@ -518,5 +518,4 @@ PRODUCT_BOOT_JARS += \
 
 #XiaomiParts
 PRODUCT_PACKAGES += \
-    XiaomiParts \
-    XiaomiAddon
+    XiaomiParts
