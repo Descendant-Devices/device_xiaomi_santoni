@@ -129,6 +129,7 @@ if [ $feature_id == 6 ]; then
 	echo 3 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel
 	echo {class:ddr, res:capped, val: 1016} > /sys/kernel/debug/aop_send_message
 	setprop vendor.sku_identified 1
+	setprop vendor.sku_name "SA6145"
 elif [ $feature_id == 5 ]; then
 	echo "SKU Configured : SA6150"
 	echo 748800 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
@@ -154,6 +155,7 @@ elif [ $feature_id == 5 ]; then
 	echo 2 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel
 	echo {class:ddr, res:capped, val: 1333} > /sys/kernel/debug/aop_send_message
 	setprop vendor.sku_identified 1
+	setprop vendor.sku_name "SA6150"
 elif [ $feature_id == 4 ] || [ $feature_id == 3 ]; then
 	echo "SKU Configured : SA6155"
 	echo 748800 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
@@ -179,8 +181,9 @@ elif [ $feature_id == 4 ] || [ $feature_id == 3 ]; then
 	echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel
 	echo {class:ddr, res:capped, val: 1555} > /sys/kernel/debug/aop_send_message
 	setprop vendor.sku_identified 1
+	setprop vendor.sku_name "SA6155"
 else
-	echo "unknown feature_id value" $feature_id
+	echo "SKU Configured : SA6155"
 	echo 748800 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 	echo 748800 > /sys/devices/system/cpu/cpu1/cpufreq/scaling_min_freq
 	echo 748800 > /sys/devices/system/cpu/cpu2/cpufreq/scaling_min_freq
@@ -204,6 +207,7 @@ else
 	echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel
 	echo {class:ddr, res:capped, val: 1555} > /sys/kernel/debug/aop_send_message
         setprop vendor.sku_identified 1
+	setprop vendor.sku_name "SA6155"
 fi
 }
 
@@ -240,6 +244,12 @@ function 8953_sched_dcvs_hmp()
     echo 39000 > /sys/devices/system/cpu/cpufreq/interactive/min_sample_time
     echo 40000 > /sys/devices/system/cpu/cpufreq/interactive/sampling_down_factor
     echo 19 > /proc/sys/kernel/sched_upmigrate_min_nice
+    # Enable sched guided freq control
+    echo 1 > /sys/devices/system/cpu/cpufreq/interactive/use_sched_load
+    echo 1 > /sys/devices/system/cpu/cpufreq/interactive/use_migration_notif
+    echo 200000 > /proc/sys/kernel/sched_freq_inc_notify
+    echo 200000 > /proc/sys/kernel/sched_freq_dec_notify
+
 }
 
 function 8917_sched_dcvs_hmp()
@@ -536,12 +546,19 @@ function configure_zram_parameters() {
     # Zram disk - 75% for Go devices.
     # For 512MB Go device, size = 384MB, set same for Non-Go.
     # For 1GB Go device, size = 768MB, set same for Non-Go.
-    # For >=2GB Non-Go devices, size = 50% of RAM size. Limit the size to 4GB.
+    # For 2GB Go device, size = 1536MB, set same for Non-Go.
+    # For >2GB Non-Go devices, size = 50% of RAM size. Limit the size to 4GB.
     # And enable lz4 zram compression for Go targets.
 
     RamSizeGB=`echo "($MemTotal / 1048576 ) + 1" | bc`
-    zRamSizeBytes=`echo "$RamSizeGB * 1024 * 1024 * 1024 / 2" | bc`
-    zRamSizeMB=`echo "$RamSizeGB * 1024 / 2" | bc`
+    if [ $RamSizeGB -le 2 ]; then
+        zRamSizeBytes=`echo "$RamSizeGB * 1024 * 1024 * 1024 * 3 / 4" | bc`
+        zRamSizeMB=`echo "$RamSizeGB * 1024 * 3 / 4" | bc`
+    else
+        zRamSizeBytes=`echo "$RamSizeGB * 1024 * 1024 * 1024 / 2" | bc`
+        zRamSizeMB=`echo "$RamSizeGB * 1024 / 2" | bc`
+    fi
+
     # use MB avoid 32 bit overflow
     if [ $zRamSizeMB -gt 4096 ]; then
         zRamSizeBytes=4294967296
@@ -555,13 +572,7 @@ function configure_zram_parameters() {
         if [ -f /sys/block/zram0/use_dedup ]; then
             echo 1 > /sys/block/zram0/use_dedup
         fi
-        if [ $MemTotal -le 524288 ]; then
-            echo 402653184 > /sys/block/zram0/disksize
-        elif [ $MemTotal -le 1048576 ]; then
-            echo 805306368 > /sys/block/zram0/disksize
-        else
-            echo $zRamSizeBytes > /sys/block/zram0/disksize
-        fi
+        echo $zRamSizeBytes > /sys/block/zram0/disksize
 
         # ZRAM may use more memory than it saves if SLAB_STORE_USER
         # debug option is enabled.
@@ -661,11 +672,9 @@ if [ "$ProductName" == "msmnile" ] || [ "$ProductName" == "kona" ] || [ "$Produc
       echo 100 > /proc/sys/vm/swappiness
 else
     arch_type=`uname -m`
-    MemTotalStr=`cat /proc/meminfo | grep MemTotal`
-    MemTotal=${MemTotalStr:16:8}
 
     # Set parameters for 32-bit Go targets.
-    if [ $MemTotal -le 1048576 ] && [ "$low_ram" == "true" ]; then
+    if [ "$low_ram" == "true" ]; then
         # Disable KLMK, ALMK, PPR & Core Control for Go devices
         echo 0 > /sys/module/lowmemorykiller/parameters/enable_lmk
         echo 0 > /sys/module/lowmemorykiller/parameters/enable_adaptive_lmk
@@ -723,30 +732,33 @@ else
             echo 1 > /sys/module/lowmemorykiller/parameters/oom_reaper
         fi
 
-        # Set PPR parameters
-        if [ -f /sys/devices/soc0/soc_id ]; then
-            soc_id=`cat /sys/devices/soc0/soc_id`
-        else
-            soc_id=`cat /sys/devices/system/soc/soc0/id`
-        fi
+        if [ "$ProductName" != "bengal_32" ]; then
+            #bengal_32 has appcompaction enabled. So not needed
+            # Set PPR parametersi for other targets
+            if [ -f /sys/devices/soc0/soc_id ]; then
+                soc_id=`cat /sys/devices/soc0/soc_id`
+            else
+                soc_id=`cat /sys/devices/system/soc/soc0/id`
+            fi
 
-        case "$soc_id" in
-          # Do not set PPR parameters for premium targets
-          # sdm845 - 321, 341
-          # msm8998 - 292, 319
-          # msm8996 - 246, 291, 305, 312
-          "321" | "341" | "292" | "319" | "246" | "291" | "305" | "312")
-            ;;
-          *)
-            #Set PPR parameters for all other targets.
-            echo $set_almk_ppr_adj > /sys/module/process_reclaim/parameters/min_score_adj
-            echo 1 > /sys/module/process_reclaim/parameters/enable_process_reclaim
-            echo 50 > /sys/module/process_reclaim/parameters/pressure_min
-            echo 70 > /sys/module/process_reclaim/parameters/pressure_max
-            echo 30 > /sys/module/process_reclaim/parameters/swap_opt_eff
-            echo 512 > /sys/module/process_reclaim/parameters/per_swap_size
-            ;;
-        esac
+            case "$soc_id" in
+              # Do not set PPR parameters for premium targets
+              # sdm845 - 321, 341
+              # msm8998 - 292, 319
+              # msm8996 - 246, 291, 305, 312
+              "321" | "341" | "292" | "319" | "246" | "291" | "305" | "312")
+                ;;
+              *)
+                #Set PPR parameters for all other targets.
+                echo $set_almk_ppr_adj > /sys/module/process_reclaim/parameters/min_score_adj
+                echo 1 > /sys/module/process_reclaim/parameters/enable_process_reclaim
+                echo 50 > /sys/module/process_reclaim/parameters/pressure_min
+                echo 70 > /sys/module/process_reclaim/parameters/pressure_max
+                echo 30 > /sys/module/process_reclaim/parameters/swap_opt_eff
+                echo 512 > /sys/module/process_reclaim/parameters/per_swap_size
+                ;;
+            esac
+        fi
     fi
 
     # Set allocstall_threshold to 0 for all targets.
@@ -3548,7 +3560,8 @@ case "$target" in
         # Set Memory parameters
         configure_memory_parameters
 
-        if [ `cat /sys/devices/soc0/revision` == "2.0" ]; then
+        rev=`cat /sys/devices/soc0/revision`
+        if [ $rev == "2.0" ] || [ $rev == "2.0.2" ]; then
              # r2.0 related changes
              echo "0:1075200" > /sys/devices/system/cpu/cpu_boost/input_boost_freq
              echo 610000 > /sys/devices/system/cpu/cpufreq/policy0/schedutil/rtg_boost_freq
@@ -3683,11 +3696,11 @@ case "$target" in
 
     #Apply settings for lagoon
     case "$soc_id" in
-        "434" )
+        "434" | "459" )
 
         # Core control parameters on silver
         echo 0 0 0 0 1 1 > /sys/devices/system/cpu/cpu0/core_ctl/not_preferred
-        echo 6 > /sys/devices/system/cpu/cpu0/core_ctl/min_cpus
+        echo 4 > /sys/devices/system/cpu/cpu0/core_ctl/min_cpus
         echo 60 > /sys/devices/system/cpu/cpu0/core_ctl/busy_up_thres
         echo 40 > /sys/devices/system/cpu/cpu0/core_ctl/busy_down_thres
         echo 100 > /sys/devices/system/cpu/cpu0/core_ctl/offline_delay_ms
@@ -3778,12 +3791,12 @@ case "$target" in
                 echo 1600 > $llccbw/bw_hwmon/idle_mbps
             done
 
-            for npubw in $device/*npu*-npu-ddr-bw/devfreq/*npu*-npu-ddr-bw
+            for npubw in $device/*npu*-ddr-bw/devfreq/*npu*-ddr-bw
             do
                 echo 1 > /sys/devices/virtual/npu/msm_npu/pwr
                 echo "bw_hwmon" > $npubw/governor
                 echo 40 > $npubw/polling_interval
-                echo "1144 1720 2086 2929 3879 5931 6881 8137" > $npubw/bw_hwmon/mbps_zones
+                echo "1144 1720 2086 2929 3879 5931 6881 7980" > $npubw/bw_hwmon/mbps_zones
                 echo 4 > $npubw/bw_hwmon/sample_ms
                 echo 80 > $npubw/bw_hwmon/io_percent
                 echo 20 > $npubw/bw_hwmon/hist_memory
@@ -3795,11 +3808,35 @@ case "$target" in
                 echo 0 > /sys/devices/virtual/npu/msm_npu/pwr
             done
 
-           #Enable mem_latency governor for L3, LLCC, and DDR scaling
+            for npullccbw in $device/*npu*-llcc-bw/devfreq/*npu*-llcc-bw
+            do
+                echo 1 > /sys/devices/virtual/npu/msm_npu/pwr
+                echo "bw_hwmon" > $npullccbw/governor
+                echo 40 > $npullccbw/polling_interval
+                echo "2288 4577 7110 9155 12298 14236 16265" > $npullccbw/bw_hwmon/mbps_zones
+                echo 4 > $npullccbw/bw_hwmon/sample_ms
+                echo 100 > $npullccbw/bw_hwmon/io_percent
+                echo 20 > $npullccbw/bw_hwmon/hist_memory
+                echo 10 > $npullccbw/bw_hwmon/hyst_length
+                echo 30 > $npullccbw/bw_hwmon/down_thres
+                echo 0 > $npullccbw/bw_hwmon/guard_band_mbps
+                echo 250 > $npullccbw/bw_hwmon/up_scale
+                echo 0 > /sys/devices/virtual/npu/msm_npu/pwr
+            done
+
+           #Enable mem_latency governor for L3 scaling
             for memlat in $device/*qcom,devfreq-l3/*cpu*-lat/devfreq/*cpu*-lat
             do
                 echo "mem_latency" > $memlat/governor
-                echo 10 > $memlat/polling_interval
+                echo 8 > $memlat/polling_interval
+                echo 400 > $memlat/mem_latency/ratio_ceil
+            done
+
+            #Enable mem_latency governor for LLCC, and DDR scaling
+            for memlat in $device/*cpu*-lat/devfreq/*cpu*-lat
+            do
+                echo "mem_latency" > $memlat/governor
+                echo 8 > $memlat/polling_interval
                 echo 400 > $memlat/mem_latency/ratio_ceil
             done
 
@@ -3807,11 +3844,6 @@ case "$target" in
             for l3cdsp in $device/*qcom,devfreq-l3/*cdsp-l3-lat/devfreq/*cdsp-l3-lat
             do
                 echo "powersave" > $l3cdsp/governor
-            done
-
-            for cpu7l3 in $device/*qcom,devfreq-l3/*cpu7-cpu-l3-lat/devfreq/*cpu7-cpu-l3-lat
-            do
-                echo "powersave" > $memlat/governor
             done
 
             #Gold L3 ratio ceil
@@ -3824,7 +3856,7 @@ case "$target" in
             for latfloor in $device/*cpu*-ddr-latfloor*/devfreq/*cpu-ddr-latfloor*
             do
                 echo "compute" > $latfloor/governor
-                echo 10 > $latfloor/polling_interval
+                echo 8 > $latfloor/polling_interval
             done
 
         done
@@ -3837,7 +3869,7 @@ case "$target" in
         echo 0 > /proc/sys/kernel/sched_boost
 
         # Turn off sleep modes
-        echo 1 > /sys/module/lpm_levels/parameters/sleep_disabled
+        echo 0 > /sys/module/lpm_levels/parameters/sleep_disabled
       ;;
     esac
 esac
@@ -3882,6 +3914,10 @@ case "$target" in
             echo 1305600 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/hispeed_freq
             echo 614400 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
             echo 0 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/rtg_boost_freq
+
+            # configure input boost settings
+            echo "0:1017600" > /sys/devices/system/cpu/cpu_boost/input_boost_freq
+            echo 80 > /sys/devices/system/cpu/cpu_boost/input_boost_ms
 
             # configure governor settings for big cluster
             echo "schedutil" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor
@@ -3968,6 +4004,85 @@ case "$target" in
 
             ;;
         esac
+
+        # Scuba perf/power tunings
+        case "$soc_id" in
+             "441" )
+
+            # Quad-core device. disable core_ctl
+            echo 0 > /sys/devices/system/cpu/cpu0/core_ctl/enable
+
+            # Configure schedutil governor settings
+            echo "schedutil" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+            echo 0 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/up_rate_limit_us
+            echo 0 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/down_rate_limit_us
+            echo 1305600 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/hispeed_freq
+            echo 614400 > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+            echo 0 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/rtg_boost_freq
+
+            # sched_load_boost as -6 is equivalent to target load as 85.
+            echo 0 > /proc/sys/kernel/sched_boost
+            echo -6 > /sys/devices/system/cpu/cpu0/sched_load_boost
+            echo -6 > /sys/devices/system/cpu/cpu1/sched_load_boost
+            echo -6 > /sys/devices/system/cpu/cpu2/sched_load_boost
+            echo -6 > /sys/devices/system/cpu/cpu3/sched_load_boost
+            echo 85 > /sys/devices/system/cpu/cpu0/cpufreq/schedutil/hispeed_load
+
+            # Set Memory parameters
+            configure_memory_parameters
+
+            # Enable bus-dcvs
+            ddr_type=`od -An -tx /proc/device-tree/memory/ddr_device_type`
+            ddr_type4="07"
+            ddr_type3="05"
+
+            for device in /sys/devices/platform/soc
+            do
+                for cpubw in $device/*cpu-cpu-ddr-bw/devfreq/*cpu-cpu-ddr-bw
+                do
+                    echo "bw_hwmon" > $cpubw/governor
+                    echo 50 > $cpubw/polling_interval
+                    echo 762 > $cpubw/min_freq
+                    if [ ${ddr_type:4:2} == $ddr_type4 ]; then
+                        # LPDDR4
+                        echo "2288 3440 4173 5195 5859 7759 10322 11863 13763" > $cpubw/bw_hwmon/mbps_zones
+                        echo 85 > $cpubw/bw_hwmon/io_percent
+                    fi
+                    if [ ${ddr_type:4:2} == $ddr_type3 ]; then
+                        # LPDDR3
+                        echo "1525 3440 5195 5859 7102" > $cpubw/bw_hwmon/mbps_zones
+                        echo 34 > $cpubw/bw_hwmon/io_percent
+                    fi
+                    echo 4 > $cpubw/bw_hwmon/sample_ms
+                    echo 90 > $cpubw/bw_hwmon/decay_rate
+                    echo 190 > $cpubw/bw_hwmon/bw_step
+                    echo 20 > $cpubw/bw_hwmon/hist_memory
+                    echo 0 > $cpubw/bw_hwmon/hyst_length
+                    echo 80 > $cpubw/bw_hwmon/down_thres
+                    echo 0 > $cpubw/bw_hwmon/guard_band_mbps
+                    echo 250 > $cpubw/bw_hwmon/up_scale
+                   echo 1600 > $cpubw/bw_hwmon/idle_mbps
+                done
+
+                for memlat in $device/*cpu*-lat/devfreq/*cpu*-lat
+                do
+                    echo "mem_latency" > $memlat/governor
+                    echo 10 > $memlat/polling_interval
+                    echo 400 > $memlat/mem_latency/ratio_ceil
+                done
+
+                for latfloor in $device/*cpu*-ddr-latfloor*/devfreq/*cpu-ddr-latfloor*
+                do
+                    echo "compute" > $latfloor/governor
+                    echo 10 > $latfloor/polling_interval
+                done
+            done
+
+            # Disable low power modes. Enable it after LPM stable
+            echo 1 > /sys/module/lpm_levels/parameters/sleep_disabled
+            ;;
+        esac
+
     ;;
 esac
 
