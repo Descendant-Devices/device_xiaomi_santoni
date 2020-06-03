@@ -25,8 +25,7 @@ BOARD_VENDOR := Xiaomi
 PRODUCT_MANUFACTURER := Xiaomi
 
 # QCom Proprietary
-include vendor/qcom/common/perf/qti-perf.mk
-include vendor/qcom/common/av/qti-av.mk
+include vendor/qcom/common/perf/perf-vendor.mk
 
 # GApps
 SUPPORTS_NATIVE_GOOGLE_CAMERA := NO
